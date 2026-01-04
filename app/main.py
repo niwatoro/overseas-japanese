@@ -50,6 +50,24 @@ def _build_metric_summary(name: Metric) -> MetricSummary:
     )
 
 
+def _build_country_response(record: dict[str, object]) -> CountryResponse:
+    return CountryResponse(
+        country=record["country"],
+        region=record["region"],
+        iso_alpha3=record["iso_alpha3"],
+        iso_alpha2=record.get("iso_alpha2"),
+        values=CountryValues(**record["values"]),
+    )
+
+
+def _get_country_responses(metric: Metric, limit: int | None) -> list[CountryResponse]:
+    try:
+        records = top_countries(metric.value, limit)
+    except KeyError as err:
+        raise HTTPException(status_code=400, detail=str(err))
+    return [_build_country_response(record) for record in records]
+
+
 flask_app = create_dashboard_app()
 api_app = FastAPI(title="Overseas Japanese Distribution API")
 
@@ -63,46 +81,19 @@ def list_metrics() -> list[MetricSummary]:
 def country_metrics(
     metric: Metric = Metric.total, limit: int = Query(25, ge=1, le=100)
 ) -> list[CountryResponse]:
-    try:
-        records = top_countries(metric.value, limit)
-    except KeyError as err:
-        raise HTTPException(status_code=400, detail=str(err))
-    return [
-        CountryResponse(
-            country=record["country"],
-            region=record["region"],
-            iso_alpha3=record["iso_alpha3"],
-            iso_alpha2=record.get("iso_alpha2"),
-            values=CountryValues(**record["values"]),
-        )
-        for record in records
-    ]
+    return _get_country_responses(metric, limit)
 
 
 @api_app.get("/data/all", response_model=list[CountryResponse])
 def all_country_metrics(metric: Metric = Metric.total) -> list[CountryResponse]:
-    try:
-        records = top_countries(metric.value, None)
-    except KeyError as err:
-        raise HTTPException(status_code=400, detail=str(err))
-    return [
-        CountryResponse(
-            country=record["country"],
-            region=record["region"],
-            iso_alpha3=record["iso_alpha3"],
-            iso_alpha2=record.get("iso_alpha2"),
-            values=CountryValues(**record["values"]),
-        )
-        for record in records
-    ]
+    return _get_country_responses(metric, None)
 
 
 @api_app.get("/regions", response_model=list[RegionTotals])
 def region_totals() -> list[RegionTotals]:
-    summaries = aggregate_by_region()
     return [
         RegionTotals(region=summary["region"], totals=CountryValues(**summary["totals"]))
-        for summary in summaries
+        for summary in aggregate_by_region()
     ]
 
 
