@@ -33,6 +33,14 @@ async function fetchData(metric) {
   return response.json();
 }
 
+async function fetchMapData(metric) {
+  const response = await fetch(`/api/data/all?metric=${metric}`);
+  if (!response.ok) {
+    throw new Error("マップ用データの取得に失敗しました");
+  }
+  return response.json();
+}
+
 async function fetchRegions() {
   const response = await fetch("/api/regions");
   if (!response.ok) {
@@ -57,9 +65,12 @@ async function updateMetric(metric) {
   }
   metricTitle.textContent = state.currentMetric.label;
   metricDescription.textContent = state.currentMetric.description;
-  const records = await fetchData(state.currentMetric.name);
-  renderChoropleth(records);
-  renderRanking(records);
+  const [rankingRecords, mapRecords] = await Promise.all([
+    fetchData(state.currentMetric.name),
+    fetchMapData(state.currentMetric.name),
+  ]);
+  renderChoropleth(mapRecords);
+  renderRanking(rankingRecords);
 }
 
 function renderChoropleth(records) {

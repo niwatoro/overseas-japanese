@@ -50,16 +50,15 @@ def _build_metric_summary(name: Metric) -> MetricSummary:
 
 
 flask_app = create_dashboard_app()
-app = FastAPI(title="Overseas Japanese Distribution API")
-app.mount("/ui", WSGIMiddleware(flask_app))
+api_app = FastAPI(title="Overseas Japanese Distribution API")
 
 
-@app.get("/api/metrics", response_model=list[MetricSummary])
+@api_app.get("/metrics", response_model=list[MetricSummary])
 def list_metrics() -> list[MetricSummary]:
     return [_build_metric_summary(metric) for metric in Metric]
 
 
-@app.get("/api/data", response_model=list[CountryResponse])
+@api_app.get("/data", response_model=list[CountryResponse])
 def country_metrics(
     metric: Metric = Metric.total, limit: int = Query(25, ge=1, le=100)
 ) -> list[CountryResponse]:
@@ -78,10 +77,32 @@ def country_metrics(
     ]
 
 
-@app.get("/api/regions", response_model=list[RegionTotals])
+@api_app.get("/data/all", response_model=list[CountryResponse])
+def all_country_metrics(metric: Metric = Metric.total) -> list[CountryResponse]:
+    try:
+        records = top_countries(metric.value, None)
+    except KeyError as err:
+        raise HTTPException(status_code=400, detail=str(err))
+    return [
+        CountryResponse(
+            country=record["country"],
+            region=record["region"],
+            iso_alpha3=record["iso_alpha3"],
+            values=CountryValues(**record["values"]),
+        )
+        for record in records
+    ]
+
+
+@api_app.get("/regions", response_model=list[RegionTotals])
 def region_totals() -> list[RegionTotals]:
     summaries = aggregate_by_region()
     return [
         RegionTotals(region=summary["region"], totals=CountryValues(**summary["totals"]))
         for summary in summaries
     ]
+
+
+app = FastAPI()
+app.mount("/api", api_app)
+app.mount("/", WSGIMiddleware(flask_app))

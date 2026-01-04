@@ -138,13 +138,13 @@ def aggregate_by_region() -> list[dict[str, object]]:
 METRIC_KEYS = tuple(METRIC_LABELS.keys())
 
 
-def top_countries(metric: str, limit: int) -> list[dict[str, object]]:
+def top_countries(metric: str, limit: int | None) -> list[dict[str, object]]:
     if metric not in METRIC_KEYS:
         raise KeyError(f"Unknown metric '{metric}'")
     df = load_data()
     metric_series = df[metric]
     ranked = df[metric_series.notna()].sort_values(metric, ascending=False)
-    institutions = ranked.head(limit)
+    institutions = ranked.head(limit) if limit is not None else ranked
     return [
         {
             "country": row["country"],
