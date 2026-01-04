@@ -1,6 +1,7 @@
 const metricSelect = document.getElementById("metric-select");
 const metricTitle = document.getElementById("metric-title");
 const metricDescription = document.getElementById("metric-description");
+const metricBadge = document.querySelector(".metric-badge");
 const regionBody = document.getElementById("region-table-body");
 const rankingBody = document.getElementById("ranking-table-body");
 const mapContainer = document.getElementById("map");
@@ -65,6 +66,9 @@ async function updateMetric(metric) {
   }
   metricTitle.textContent = state.currentMetric.label;
   metricDescription.textContent = state.currentMetric.description;
+  if (metricBadge) {
+    metricBadge.textContent = state.currentMetric.label;
+  }
   const [rankingRecords, mapRecords] = await Promise.all([
     fetchData(state.currentMetric.name),
     fetchMapData(state.currentMetric.name),
@@ -115,9 +119,13 @@ function renderChoropleth(records) {
     geo: {
       showframe: false,
       showcoastlines: true,
-      projection: { type: "natural earth" },
+      projection: {
+        type: "natural earth",
+        rotation: { lon: 180, lat: 0, roll: 0 },
+      },
+      center: { lon: 180, lat: 0 },
     },
-    margin: { t: 50, l: 0, r: 0, b: 0 },
+    margin: { t: 30, l: 0, r: 0, b: 0 },
   };
   Plotly.react(mapContainer, [data], layout, { responsive: true });
 }
