@@ -90,13 +90,30 @@ function renderChoropleth(records) {
     return;
   }
   const values = filtered.map((row) => row.values[metricKey]);
-  const zMin = Math.min(...values);
-  const zMax = Math.max(...values);
+  const logValues = values.map((value) => Math.log10(Math.max(value, 1)));
+  const zMin = Math.min(...logValues);
+  const zMax = Math.max(...logValues);
+  const positiveValues = values.filter((value) => value > 0);
+  const minPositiveValue = positiveValues.length
+    ? Math.min(...positiveValues)
+    : 1;
+  const maxValue = positiveValues.length
+    ? Math.max(...positiveValues)
+    : 1;
+  const minExponent = Math.floor(Math.log10(minPositiveValue));
+  const maxExponent = Math.max(
+    Math.ceil(Math.log10(maxValue)),
+    minExponent
+  );
+  const tickExponents = [];
+  for (let exponent = minExponent; exponent <= maxExponent; exponent += 1) {
+    tickExponents.push(exponent);
+  }
   const data = {
     type: "choropleth",
     locationmode: "ISO-3",
     locations: filtered.map((row) => row.iso_alpha3),
-    z: values,
+    z: logValues,
     text: filtered.map(
       (row) => `${row.country}：${formatNumber(row.values[metricKey])}`
     ),
@@ -104,7 +121,10 @@ function renderChoropleth(records) {
     colorbar: {
       title: state.currentMetric?.label || "",
       titleside: "top",
-      tickformat: ",.0f",
+      tickvals: tickExponents,
+      ticktext: tickExponents.map((exponent) =>
+        Number(10 ** exponent).toLocaleString("ja-JP")
+      ),
       ticks: "outside",
       lenmode: "fraction",
       len: 0.55,
