@@ -33,6 +33,7 @@ class CountryResponse(BaseModel):
     country: str
     region: str
     iso_alpha3: str | None = Field(None, description="ISO 3166-1 alpha-3 コード")
+    iso_alpha2: str | None = Field(None, description="ISO 3166-1 alpha-2 コード")
     values: CountryValues
 
 
@@ -71,6 +72,7 @@ def country_metrics(
             country=record["country"],
             region=record["region"],
             iso_alpha3=record["iso_alpha3"],
+            iso_alpha2=record.get("iso_alpha2"),
             values=CountryValues(**record["values"]),
         )
         for record in records
@@ -88,6 +90,7 @@ def all_country_metrics(metric: Metric = Metric.total) -> list[CountryResponse]:
             country=record["country"],
             region=record["region"],
             iso_alpha3=record["iso_alpha3"],
+            iso_alpha2=record.get("iso_alpha2"),
             values=CountryValues(**record["values"]),
         )
         for record in records

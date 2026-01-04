@@ -70,6 +70,13 @@ def _alpha2_to_alpha3(alpha2: str | None) -> str | None:
     return country.alpha_3 if country else None
 
 
+def _alpha3_to_alpha2(alpha3: str | None) -> str | None:
+    if not alpha3:
+        return None
+    country = pycountry.countries.get(alpha_3=alpha3)
+    return country.alpha_2 if country else None
+
+
 JAPANESE_COUNTRY_INDEX = _build_japanese_country_index()
 
 def _clean_text(value: str | float | int | None) -> str:
@@ -136,6 +143,7 @@ def load_data() -> pd.DataFrame:
         country=df["country"].astype(str).map(_sanitize_country),
     )
     df["iso_alpha3"] = df["country"].map(_resolve_iso)
+    df["iso_alpha2"] = df["iso_alpha3"].map(_alpha3_to_alpha2)
     return df.drop_duplicates(subset=("country", "region"))
 
 
@@ -175,6 +183,7 @@ def top_countries(metric: str, limit: int | None) -> list[dict[str, object]]:
             "country": row["country"],
             "region": row["region"],
             "iso_alpha3": row["iso_alpha3"],
+            "iso_alpha2": row["iso_alpha2"],
             "values": {
                 "total": row["total"],
                 "long_term": row["long_term"],
