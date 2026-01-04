@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import csv
 import gettext
+import math
 import unicodedata
 from collections import defaultdict
 from functools import lru_cache
 from typing import Literal
 
-import pandas as pd
 import pycountry
 from babel import Locale
 
@@ -29,6 +30,8 @@ METRIC_LABELS: dict[Metric, str] = {
     "long_term": "長期滞在邦人数",
     "permanent": "永住邦人数",
 }
+
+NUMERIC_KEYS = ("total", "long_term", "permanent", "adults")
 
 
 def _normalize_for_index(value: str) -> str:
@@ -59,24 +62,13 @@ def _build_japanese_country_index() -> dict[str, set[str]]:
     return index
 
 
-def _alpha2_to_alpha3(alpha2: str | None) -> str | None:
-    if not alpha2:
-        return None
-    country = pycountry.countries.get(alpha_2=alpha2)
-    return country.alpha_3 if country else None
-
-
-def _alpha3_to_alpha2(alpha3: str | None) -> str | None:
-    if not alpha3:
-        return None
-    country = pycountry.countries.get(alpha_3=alpha3)
-    return country.alpha_2 if country else None
-
-
 JAPANESE_COUNTRY_INDEX = _build_japanese_country_index()
 
+
 def _clean_text(value: str | float | int | None) -> str:
-    if value is None or (isinstance(value, float) and pd.isna(value)):
+    if value is None:
+        return ""
+    if isinstance(value, float) and math.isnan(value):
         return ""
     text = str(value).strip().replace('"', "")
     return text.replace("\u3000", " ").strip()
@@ -99,6 +91,20 @@ def _sanitize_country(value: str | None) -> str:
         if delim in normalized:
             normalized = normalized.split(delim)[0].strip()
     return normalized
+
+
+def _alpha2_to_alpha3(alpha2: str | None) -> str | None:
+    if not alpha2:
+        return None
+    country = pycountry.countries.get(alpha_2=alpha2)
+    return country.alpha_3 if country else None
+
+
+def _alpha3_to_alpha2(alpha3: str | None) -> str | None:
+    if not alpha3:
+        return None
+    country = pycountry.countries.get(alpha_3=alpha3)
+    return country.alpha_2 if country else None
 
 
 def _resolve_iso(value: str | None) -> str | None:
@@ -124,44 +130,76 @@ def _resolve_iso(value: str | None) -> str | None:
     return None
 
 
+def _read_csv_rows() -> list[dict[str, object | None]]:
+    with open(CSV_FILENAME, newline="", encoding="utf-8-sig") as csvfile:
+        reader = csv.DictReader(csvfile)
+        rows: list[dict[str, object | None]] = []
+        for raw in reader:
+            mapped: dict[str, object | None] = {}
+            for source, dest in COLUMN_MAP.items():
+                mapped[dest] = raw.get(source)
+            rows.append(mapped)
+        return rows
+
+
 @lru_cache(maxsize=1)
-def load_data() -> pd.DataFrame:
-    df = pd.read_csv(CSV_FILENAME, encoding="utf-8-sig")
-    df = df.rename(columns={k: v for k, v in COLUMN_MAP.items() if k in df.columns})
-    df = df[df["country"].notna() & df["region"].notna()]
+def load_data() -> tuple[dict[str, object | None], ...]:
+    seen: set[tuple[str, str]] = set()
+    records: list[dict[str, object | None]] = []
+    for row in _read_csv_rows():
+        country_raw = _clean_text(row.get("country"))
+        region_raw = _clean_text(row.get("region"))
+        if not country_raw or not region_raw:
+            continue
+        region = region_raw.replace("\u3000", " ").strip()
+        country = _sanitize_country(country_raw)
+        if not country:
+            continue
+        key = (country, region)
+        if key in seen:
+            continue
+        seen.add(key)
 
-    for column in ("total", "long_term", "permanent", "adults"):
-        if column in df:
-            df[column] = df[column].map(_parse_int)
+        values = {metric: _parse_int(row.get(metric)) for metric in NUMERIC_KEYS}
+        iso_alpha3 = _resolve_iso(country)
+        iso_alpha2 = _alpha3_to_alpha2(iso_alpha3)
 
-    df = df.assign(
-        region=df["region"].astype(str).str.replace("\u3000", " ").str.strip(),
-        country=df["country"].astype(str).map(_sanitize_country),
-    )
-    df["iso_alpha3"] = df["country"].map(_resolve_iso)
-    df["iso_alpha2"] = df["iso_alpha3"].map(_alpha3_to_alpha2)
-    return df.drop_duplicates(subset=("country", "region"))
+        records.append(
+            {
+                "country": country,
+                "region": region,
+                "iso_alpha3": iso_alpha3,
+                "iso_alpha2": iso_alpha2,
+                **values,
+            }
+        )
+    return tuple(records)
 
 
 def aggregate_by_region() -> list[dict[str, object]]:
-    df = load_data()
-    records: list[dict[str, object]] = []
-    grouping = (
-        df.groupby("region", sort=False)[["total", "long_term", "permanent", "adults"]]
-        .sum(min_count=1)
-        .reset_index()
-    )
-    for _, row in grouping.iterrows():
-        records.append(
-            {
-                "region": row["region"],
-                "totals": {
-                    key: int(row[key]) if pd.notna(row[key]) else None
-                    for key in ("total", "long_term", "permanent", "adults")
-                },
-            }
+    region_totals: dict[str, dict[str, dict[str, int]]] = {}
+    for record in load_data():
+        stats = region_totals.setdefault(
+            record["region"],
+            {key: {"sum": 0, "count": 0} for key in NUMERIC_KEYS},
         )
-    return records
+        for key in NUMERIC_KEYS:
+            value = record.get(key)
+            if value is None:
+                continue
+            stats[key]["sum"] += value
+            stats[key]["count"] += 1
+
+    return [
+        {
+            "region": region,
+            "totals": {
+                key: stats[key]["sum"] if stats[key]["count"] else None
+                for key in NUMERIC_KEYS
+            },
+        }
+        for region, stats in region_totals.items()
+    ]
 
 
 METRIC_KEYS = tuple(METRIC_LABELS.keys())
@@ -170,22 +208,20 @@ METRIC_KEYS = tuple(METRIC_LABELS.keys())
 def top_countries(metric: str, limit: int | None) -> list[dict[str, object]]:
     if metric not in METRIC_KEYS:
         raise KeyError(f"Unknown metric '{metric}'")
-    df = load_data()
-    metric_series = df[metric]
-    ranked = df[metric_series.notna()].sort_values(metric, ascending=False)
-    institutions = ranked.head(limit) if limit is not None else ranked
+    records = [
+        record
+        for record in load_data()
+        if record.get(metric) is not None
+    ]
+    ranked = sorted(records, key=lambda item: item.get(metric), reverse=True)
+    sliced = ranked[:limit] if limit is not None else ranked
     return [
         {
             "country": row["country"],
             "region": row["region"],
             "iso_alpha3": row["iso_alpha3"],
             "iso_alpha2": row["iso_alpha2"],
-            "values": {
-                "total": row["total"],
-                "long_term": row["long_term"],
-                "permanent": row["permanent"],
-                "adults": row.get("adults"),
-            },
+            "values": {key: row.get(key) for key in NUMERIC_KEYS},
         }
-        for _, row in institutions.iterrows()
+        for row in sliced
     ]

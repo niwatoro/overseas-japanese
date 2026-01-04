@@ -8,6 +8,5 @@ dependencies = [
     "babel>=2.17.0",
     "fastapi>=0.128.0",
     "flask>=2.4.0",
-    "pandas>=2.3.3",
     "pycountry>=24.6.1",
 ]

@@ -8,9 +8,8 @@ and uses Plotly to render the distributions on a choropleth map plus companion t
 
 ## Prerequisites
 
-- Python **>=3.13**
-- `pip install -e .` will pull in FastAPI, Flask, pandas, Plotly, and the tooling listed in
-  `pyproject.toml`.
+- Python **>=3.12**
+- `pip install -e .` will pull in FastAPI, Flask, and the tooling listed in `pyproject.toml`.
 
 ## Setup
 

@@ -3,9 +3,10 @@ from __future__ import annotations
 import math
 from enum import Enum
 
-from flask import abort, Flask, jsonify, render_template
+from flask import Flask, abort, jsonify, render_template
 
 from data.loader import METRIC_LABELS, aggregate_by_region, top_countries
+
 app = Flask(__name__, template_folder="../templates", static_folder="../static")
 
 class Metric(str, Enum):
