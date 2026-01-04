@@ -1,20 +1,16 @@
 from __future__ import annotations
 
+import gettext
+import unicodedata
 from collections import defaultdict
 from functools import lru_cache
 from typing import Literal
-from pathlib import Path
 
-import gettext
-import unicodedata
 import pandas as pd
 import pycountry
 from babel import Locale
 
-CSV_FILENAME = (
-    Path(__file__).resolve().parents[1]
-    / "海外在留邦人数調査統計（令和7年10月1日現在：機械判別用）.csv"
-)
+CSV_FILENAME = "data/海外在留邦人数調査統計（令和7年10月1日現在：機械判別用）.csv"
 
 Metric = Literal["total", "long_term", "permanent"]
 

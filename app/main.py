@@ -2,13 +2,12 @@ from __future__ import annotations
 
 from enum import Enum
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.middleware.wsgi import WSGIMiddleware
+from flask import Flask, jsonify, render_template
 from pydantic import BaseModel, Field
 
-from app.data import METRIC_LABELS, aggregate_by_region, top_countries
-from app.flask_app import create_dashboard_app
+from data.loader import METRIC_LABELS, aggregate_by_region, top_countries
 
+app = Flask(__name__, template_folder="../templates", static_folder="../static")
 
 class Metric(str, Enum):
     total = "total"
@@ -68,35 +67,34 @@ def _get_country_responses(metric: Metric, limit: int | None) -> list[CountryRes
     return [_build_country_response(record) for record in records]
 
 
-flask_app = create_dashboard_app()
-api_app = FastAPI(title="Overseas Japanese Distribution API")
+@app.route("/api/metrics")
+def list_metrics():
+    return jsonify([_build_metric_summary(metric).model_dump() for metric in Metric])
 
 
-@api_app.get("/metrics", response_model=list[MetricSummary])
-def list_metrics() -> list[MetricSummary]:
-    return [_build_metric_summary(metric) for metric in Metric]
+@app.route("/api/data")
+def country_metrics():
+    metric = Metric.total
+    limit = 25
+    return jsonify([response.dict() for response in _get_country_responses(metric, limit)])
 
 
-@api_app.get("/data", response_model=list[CountryResponse])
-def country_metrics(
-    metric: Metric = Metric.total, limit: int = Query(25, ge=1, le=100)
-) -> list[CountryResponse]:
-    return _get_country_responses(metric, limit)
+@app.route("/api/data/all")
+def all_country_metrics():
+    metric = Metric.total
+    return jsonify([response.dict() for response in _get_country_responses(metric, None)])
 
 
-@api_app.get("/data/all", response_model=list[CountryResponse])
-def all_country_metrics(metric: Metric = Metric.total) -> list[CountryResponse]:
-    return _get_country_responses(metric, None)
-
-
-@api_app.get("/regions", response_model=list[RegionTotals])
-def region_totals() -> list[RegionTotals]:
-    return [
-        RegionTotals(region=summary["region"], totals=CountryValues(**summary["totals"]))
+@app.route("/api/regions")
+def region_totals():
+    return jsonify([
+        RegionTotals(region=summary["region"], totals=CountryValues(**summary["totals"])).model_dump()
         for summary in aggregate_by_region()
-    ]
+    ])
 
+@app.route("/")
+def index() -> str:
+    return render_template("index.html")
 
-app = FastAPI()
-app.mount("/api", api_app)
-app.mount("/", WSGIMiddleware(flask_app))
+if __name__ == "__main__":
+    app.run(port=8000)
