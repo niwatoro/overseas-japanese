@@ -81,15 +81,32 @@ function renderChoropleth(records) {
   const filtered = records.filter(
     (row) => row.iso_alpha3 && row.values[metricKey] != null
   );
+  if (!filtered.length) {
+    mapContainer.innerHTML = "";
+    return;
+  }
+  const values = filtered.map((row) => row.values[metricKey]);
+  const zMin = Math.min(...values);
+  const zMax = Math.max(...values);
   const data = {
     type: "choropleth",
     locationmode: "ISO-3",
     locations: filtered.map((row) => row.iso_alpha3),
-    z: filtered.map((row) => row.values[metricKey]),
+    z: values,
     text: filtered.map(
       (row) => `${row.country}：${formatNumber(row.values[metricKey])}`
     ),
-    colorscale: "Blues",
+    colorscale: "Viridis",
+    colorbar: {
+      title: state.currentMetric?.label || "",
+      titleside: "top",
+      tickformat: ",.0f",
+      ticks: "outside",
+      lenmode: "fraction",
+      len: 0.55,
+    },
+    zmin: zMin,
+    zmax: zMax,
     marker: { line: { color: "#fff", width: 0.5 } },
     hoverinfo: "text",
   };

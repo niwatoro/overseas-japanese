@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from functools import lru_cache
 from typing import Literal
 from pathlib import Path
 
+import gettext
+import unicodedata
 import pandas as pd
 import pycountry
 from babel import Locale
@@ -31,27 +34,43 @@ METRIC_LABELS: dict[Metric, str] = {
     "permanent": "永住邦人数",
 }
 
-JA_TERRITORIES = Locale("ja").territories
 
-JAPANESE_TO_ALPHA3: dict[str, str] = {}
-for alpha2, localized in JA_TERRITORIES.items():
-    if not localized or len(alpha2) != 2:
-        continue
-    try:
-        country = pycountry.countries.get(alpha_2=alpha2)
-    except KeyError:
-        continue
-    if country:
-        JAPANESE_TO_ALPHA3[localized] = country.alpha_3
+def _normalize_for_index(value: str) -> str:
+    return unicodedata.normalize("NFKC", value).strip()
 
-MANUAL_OVERRIDES: dict[str, str] = {
-    "東ティモール": "TLS",
-    "北マケドニア": "MKD",
-    "ミクロネシア連邦": "FSM",
-    "南スーダン": "SSD",
-    "パレスチナ自治区": "PSE",
-    "コソボ": "XKX",
-}
+
+def _build_japanese_country_index() -> dict[str, set[str]]:
+    index: dict[str, set[str]] = defaultdict(set)
+    loc = Locale("ja")
+    for code, name in loc.territories.items():
+        if isinstance(code, str) and len(code) == 2 and code.isalpha() and name:
+            index[_normalize_for_index(name)].add(code.upper())
+
+    translation = gettext.translation(
+        "iso3166-1", pycountry.LOCALES_DIR, languages=["ja"], fallback=True
+    )
+    _ = translation.gettext
+
+    for country in pycountry.countries:
+        for attr in ("name", "official_name", "common_name"):
+            name = getattr(country, attr, None)
+            if not name:
+                continue
+            jp_name = _(name)
+            if jp_name:
+                index[_normalize_for_index(jp_name)].add(country.alpha_2)
+
+    return index
+
+
+def _alpha2_to_alpha3(alpha2: str | None) -> str | None:
+    if not alpha2:
+        return None
+    country = pycountry.countries.get(alpha_2=alpha2)
+    return country.alpha_3 if country else None
+
+
+JAPANESE_COUNTRY_INDEX = _build_japanese_country_index()
 
 def _clean_text(value: str | float | int | None) -> str:
     if value is None or (isinstance(value, float) and pd.isna(value)):
@@ -83,12 +102,18 @@ def _resolve_iso(value: str | None) -> str | None:
     sanitized = _sanitize_country(value)
     if not sanitized:
         return None
-    if sanitized in MANUAL_OVERRIDES:
-        return MANUAL_OVERRIDES[sanitized]
-    if sanitized in JAPANESE_TO_ALPHA3:
-        return JAPANESE_TO_ALPHA3[sanitized]
+    normalized = _normalize_for_index(sanitized)
+    codes = JAPANESE_COUNTRY_INDEX.get(normalized)
+    if codes:
+        alpha3_candidates = {
+            iso
+            for iso in (_alpha2_to_alpha3(code) for code in codes)
+            if iso
+        }
+        if len(alpha3_candidates) == 1:
+            return next(iter(alpha3_candidates))
     try:
-        match = pycountry.countries.search_fuzzy(sanitized)
+        match = pycountry.countries.search_fuzzy(normalized)
     except (LookupError, AttributeError):
         return None
     if match:
